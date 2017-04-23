@@ -1,4 +1,4 @@
-<<<<<<< HEAD
+﻿
 // this program will reproduce the execution of Chao's algorithm modified to take into account the split visit
 
 #define _USE_MATH_DEFINES
@@ -2333,4 +2333,3 @@ check();
     //return best;
 check();
 }
->>>>>>> origin/master
