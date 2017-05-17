@@ -122,37 +122,6 @@ bool comparePartsScore(std::pair<Path*, std::pair<double, double>> a, std::pair<
     return (a.second.second > b.second.second);
 }
 
-//THIS FUNCTION FIXES THE SCORES OF THE PARTS SO THAT THE SCORES IN TOP PATHS ARE MAXIMIZED AND THE BIGGEST PARTS FAVORED (AS IF THE VISIT OF THOSE WAS EXECUTED FIRST)
-void equalizeNode(Node* node) {
-    int size = node->parts.pathAssignments.size();
-    std::sort(node->parts.pathAssignments.begin(), node->parts.pathAssignments.end(), compareTopVsNTop);//ORDER PARTS SO THAT TOP PARTS COME FIRST
-    int topParts = 0;
-    for (int i = 0; i < size; i++) {
-        if (node->parts.pathAssignments.at(i).first->id < M) {
-            topParts++;
-        }
-        else {
-            break;
-        }
-    }
-    std::vector<std::pair<Path*, std::pair<double, double>>>::iterator it = node->parts.pathAssignments.begin();
-    double energyUsed;
-    if (topParts > 0) {
-        std::advance(it, topParts-1);//THIS ITERATOR POINTS TO THE LAST TOP PATH
-        std::sort(node->parts.pathAssignments.begin(), it, comparePartsByEnergySpent);//ORDER TOP PARTS BY ENERGY
-    }
-    for (int i = 0; i < topParts; i++) {//UPDATE OF THE NTOP PARTS SCORES
-        node->parts.pathAssignments.at(i).second.second = (node->model.visitProb(energyUsed + node->parts.pathAssignments.at(i).second.first) - node->model.visitProb(energyUsed)) * node->score;
-        energyUsed = energyUsed + node->parts.pathAssignments.at(i).second.first;
-    }
-    it++;//NOW IT POINTS TO THE FIRST NTOP PATH
-    std::sort(it, node->parts.pathAssignments.end(), comparePartsByEnergySpent);//ORDER NTOP PARTS BY ENERGY
-    for (int i = topParts; i < size; i++) {//UPDATE OF THE NTOP PARTS SCORES
-        node->parts.pathAssignments.at(i).second.second = (node->model.visitProb(energyUsed + node->parts.pathAssignments.at(i).second.first) - node->model.visitProb(energyUsed))*node->score;
-        energyUsed = energyUsed + node->parts.pathAssignments.at(i).second.first;
-    }
-}
-
 void check() {
     std::cout << "Result:" << std::endl;
     int flag;
@@ -332,13 +301,13 @@ void movePart(std::pair<Path*, std::pair<double, double>>* part, int nodeId, int
     //ADD PART TO THE NEW PATH
     if (destPath >= 0) {//IF THE id OF THE DESTINATION PATH IS POSITIVE THE DESTINATION PATH IS ASSUMED TO EXIST
         std::list<Node*>::iterator it = allPaths.at(destPath)->nodes.begin();
-        std::advance(it, position); //ERRORE QUI INCREMENTO OLTRE LENGTH LISTA
+        std::advance(it, position);
         part->first = allPaths.at(destPath);
         if (std::distance(allPaths.at(destPath)->nodes.begin(), it) == allPaths.at(destPath)->nodes.size()) {
             allPaths.at(destPath)->nodes.push_back(allNodes.at(nodeId));
         }
         else {
-            allPaths.at(destPath)->nodes.insert(it, allNodes.at(nodeId));//SEGFAULT HERE
+            allPaths.at(destPath)->nodes.insert(it, allNodes.at(nodeId));
         }
         it = allPaths.at(destPath)->nodes.begin();
         std::advance(it, position);
@@ -364,62 +333,6 @@ void movePart(std::pair<Path*, std::pair<double, double>>* part, int nodeId, int
             allPaths.at(destPath)->energySpent = allPaths.at(destPath)->energySpent + travelCost(allNodes.at(nodeId))*2 + part->second.first;
         }
     }
-}
-
-//TOFIX REFERENCES TO PAIRS
-//THIS FUNCTION SPLITS A CERTAIN PARTITION ASSIGNED TO firstPath IN ORDER TO ASSIGN A PART TO secondPath, IT MAXIMIZES THE PART IN secondPath
-void splitNode(Node* node, Path* firstPath, Path* secondPath) {
-    //TODO: ADD THE CASE WHERE A PART ALREADY EXISTS IN THE TARGET PATH
-    std::pair<Path*, std::pair<double, double>>* firstPathPart;
-    std::pair<Path*, std::pair<double, double>>* secondPathPart;
-    for (int i = 0; i < node->parts.pathAssignments.size(); i++) {//FIND THE PART OF firstPath
-        if (node->parts.pathAssignments.at(i).first == firstPath) {
-            firstPathPart = &node->parts.pathAssignments.at(i);
-        }
-        if (node->parts.pathAssignments.at(i).first == secondPath) {
-            secondPathPart = &node->parts.pathAssignments.at(i);
-        }
-    }
-    if (secondPathPart->first == NULL) {
-        (*secondPathPart) = std::make_pair(secondPath, std::make_pair(0.0, 0.0));
-        secondPathPart->first = NULL;
-    }
-    double energyChange = std::max(0.0, firstPathPart->second.first - (energy - secondPath->energySpent));
-    firstPathPart->second.first = firstPathPart->second.first - energyChange;
-    firstPathPart->first->energySpent = firstPathPart->first->energySpent - energyChange;
-    secondPathPart->second.first = std::min((energy - secondPath->energySpent), firstPathPart->second.first);
-    if (firstPathPart->second.first == 0.0) {
-        node->parts.pathAssignments.erase(std::remove(node->parts.pathAssignments.begin(), node->parts.pathAssignments.end(), (*firstPathPart)), node->parts.pathAssignments.end());
-    }
-    if (secondPathPart->first == NULL) {
-        std::pair<double, int> result = fitMove(node, secondPath, secondPathPart->second.first);
-        movePart(secondPathPart, node->id, secondPath->id, result.second);
-    }
-    equalizeNode(node);
-}
-
-//THIS FUNCTION REVERTS A SPLIT NODE
-void revertSplitNode(Node* node, Path* firstPath, Path* secondPath) {
-    std::pair<Path*, std::pair<double, double>> firstPathPart;
-    std::pair<Path*, std::pair<double, double>> secondPathPart;
-    int firstPathFlag = 0;
-    int secondPathFlag = 0;
-    for (int i = 0; (i < node->parts.pathAssignments.size()) && ((firstPathFlag == 1) && (secondPathFlag == 1)); i++) {//FIND THE PART OF firstPath
-        if (node->parts.pathAssignments.at(i).first == firstPath) {
-            firstPathPart = node->parts.pathAssignments.at(i);
-            firstPathFlag = 1;
-        }
-    }
-    for (int i = 0; i < node->parts.pathAssignments.size(); i++) {//FIND THE PART OF firstPath
-        if (node->parts.pathAssignments.at(i).first == secondPath) {
-            secondPathPart = node->parts.pathAssignments.at(i);
-            secondPathFlag = 1;
-        }
-    }
-    firstPathPart.second.first = firstPathPart.second.first + secondPathPart.second.first;
-    firstPathPart.second.second = firstPathPart.second.second + secondPathPart.second.second;
-    node->parts.pathAssignments.erase(std::remove(node->parts.pathAssignments.begin(), node->parts.pathAssignments.end(), secondPathPart), node->parts.pathAssignments.end());
-    equalizeNode(node);
 }
 
 //this function takes a vector of pointers to nodes and returns a vector matrix representing the travel+visit costs ordered by node ID number
@@ -518,7 +431,7 @@ std::pair< std::pair<int, double>, std::pair<int, int> > cheapestInsertion(std::
                 std::pair<double, int> result = fitMove(nodes.at(i), paths.at(j), visitCost(nodes.at(i)));//USE fitMove TO GET FITNESS OF CHEAPEST INSERTION OF NODE CONSIDERED IN PATH CONSIDERED
                 cost = result.first;
                 if (admissible == 0) {//IF SOLUTION IS ADMISSIBLE AND BETTER THAN PREVIOUS WE SAVE IT
-                    if (cost < minCost && paths.at(j)->energySpent + cost < energy) {//WE PERFORM THE CHECK OF ADMISSIBILITY ONLY IF WE DIDN'T ALREADY FIND AN ADMISSIBLE SOLUTION FOR THIS PATH
+                    if ((cost < minCost) && ((paths.at(j)->energySpent + cost) < energy)) {//WE PERFORM THE CHECK OF ADMISSIBILITY ONLY IF WE DIDN'T ALREADY FIND AN ADMISSIBLE SOLUTION FOR THIS PATH
                         position = result.second;
                         minCost = cost;
                         minPath = (*paths.at(j)).id;
@@ -570,52 +483,6 @@ std::pair< std::pair<int, double>, std::pair<int, int>> cheapestInsertion(std::v
     return cheapestInsertion(nodes, paths);
 }
 
-//THIS FUNCTION CONSIDERS THE PARTITIONS OF A NODE AND TRIES TO MERGE THE PARTS IN A NTOP PATH TO THE PARTS IN A TOP PATH
-void mergeNode(Node* node) {
-    int size = node->parts.pathAssignments.size();
-    std::sort(node->parts.pathAssignments.begin(), node->parts.pathAssignments.end(), compareTopVsNTop);//ORDER PARTS SO THAT TOP PARTS COME FIRST
-    int topParts = 0;
-    for (int i = 0; i < size; i++) {
-        if (node->parts.pathAssignments.at(i).first->id < M) {
-            topParts++;
-        }
-        else {
-            break;
-        }
-    }
-    std::vector<std::pair<Path*, std::pair<double, double>>>::iterator it = node->parts.pathAssignments.begin();
-    if (topParts > 0) {
-        std::advance(it, topParts-1);// std::(it, topParts-1);//THIS ITERATOR POINTS TO THE LAST TOP PART
-        std::sort(node->parts.pathAssignments.begin(), it, comparePartsByEnergyAvailable);//NOTE: ORDER TOP PARTS BY SUM OF ENERGY LEFT IN THE PATH AND ENERGY ALREADY ASSIGNED TO THE VISIT
-        it++;//NOW IT POINTS TO THE FIRST NTOP PATH
-    }
-    std::sort(it, node->parts.pathAssignments.end(), comparePartsByEnergyAvailable);//NOTE: ORDER NTOP PARTS BY SUM OF ENERGY LEFT IN THE PATH AND ENERGY ALREADY ASSIGNED TO THE VISIT
-    for (int i = 0; i < topParts; i++) {
-        for (int j = size - 1; j > (topParts - 1); j--) {
-            node->parts.pathAssignments.at(i).second.first = node->parts.pathAssignments.at(i).second.first + std::min((energy - node->parts.pathAssignments.at(i).first->energySpent), node->parts.pathAssignments.at(j).second.first);
-            node->parts.pathAssignments.at(j).second.first = std::max(0.0, (node->parts.pathAssignments.at(j).second.first - (energy - node->parts.pathAssignments.at(i).first->energySpent)));
-            if ((energy - node->parts.pathAssignments.at(i).first->energySpent) == 0) {
-                break;
-            }
-        }
-        for (int j = topParts - 1; j > i; j--) {
-            node->parts.pathAssignments.at(i).second.first = node->parts.pathAssignments.at(i).second.first + std::min((energy - node->parts.pathAssignments.at(i).first->energySpent), node->parts.pathAssignments.at(j).second.first);
-            node->parts.pathAssignments.at(j).second.first = std::max(0.0, (node->parts.pathAssignments.at(j).second.first - (energy - node->parts.pathAssignments.at(i).first->energySpent)));
-            if ((energy - node->parts.pathAssignments.at(i).first->energySpent) == 0) {
-                break;
-            }
-        }
-    }
-    for (int i = 0; i < topParts; i++) {
-        if (node->parts.pathAssignments.at(i).second.first == 0.0) {
-            movePart(&node->parts.pathAssignments.at(i), node->id, -1, 0);
-            node->parts.pathAssignments.at(i).first->nodes.erase(std::remove(node->parts.pathAssignments.at(i).first->nodes.begin(), node->parts.pathAssignments.at(i).first->nodes.end(), node), node->parts.pathAssignments.at(i).first->nodes.end());
-            node->parts.pathAssignments.erase(std::remove(node->parts.pathAssignments.begin(), node->parts.pathAssignments.end(), node->parts.pathAssignments.at(i)), node->parts.pathAssignments.end());
-        }
-    }
-    equalizeNode(node);
-}
-
 //BOOLEAN FUNCTION TO SORT PATHS BY SCORE (GREATER SCORE FIRST)
 bool scorePathComp(Path* a, Path* b) {
     return a->totalScore > b->totalScore;
@@ -647,7 +514,6 @@ void initializePaths(std::vector<Node*> nodesToAdd) {
         nodesToAdd.erase(std::remove(nodesToAdd.begin(), nodesToAdd.end(), nodesToAdd.at(i)), nodesToAdd.end());
     }
     int prevSize;
-//INFINITE LOOP BELOW, APPARENTLY THE nodesToAdd SIZE DIMINISHES ONLY IN THE FIRST CYCLE
     while (nodesToAdd.size() > 0) {//WHILE THERE ARE NODES WITHOUT PATH WE INSERT ONE OF THOSE IN A PATH, WHEN NECESSARY WE CREATE A NEW ONE
         prevSize = nodesToAdd.size();
         std::pair< std::pair<int, double>, std::pair<int, int> > result = cheapestInsertion(nodesToAdd, allPaths);
@@ -683,7 +549,6 @@ void onePointMove() {
         bestMovePosition = -1;
         candRecord = -DBL_MAX;
         actionDone = 0;
-        mergeNode(allNodes.at(i));
         for (int l = 0; (l < allNodes.at(i)->parts.pathAssignments.size()) && (actionDone == 0); l++) {//FOR EACH PART
             candPart = &allNodes.at(i)->parts.pathAssignments.at(l);
             prevPath = candPart->first->id;
@@ -717,27 +582,6 @@ void onePointMove() {
                             }
                         }
                     }
-                    else {
-                        //SAVE PATH AND NODE STATUS
-                        Node tmpNode = *(allNodes.at(i));
-                        Path tmpPath1 = *(allPaths.at(j));
-                        Path tmpPath2 = *(allPaths.at(prevPath));
-                        //PERFORM SPLIT NODE
-                        if ((result.first / candPart->second.second) > (prob/100)) {
-                            splitNode(allNodes.at(i), allPaths.at(prevPath), allPaths.at(j));
-                            totScore = calculateRecord(allPaths);
-                        }
-                        if (totScore > record) {//CONFIRM SPLIT NODE
-                            record = totScore;
-                            deviation = (1.0-(prob/100))*record;
-                            actionDone = 1;
-                        }
-                        else {//REVERT SPLIT NODE
-                            *(allNodes.at(i)) = tmpNode;
-                            *(allPaths.at(j)) = tmpPath1;
-                            *(allPaths.at(prevPath)) = tmpPath2;
-                        }
-                    }
                 }
             }
         }
@@ -769,7 +613,7 @@ bool comparePartScore(std::pair<int, std::pair<Path*, std::pair<double, double>>
     }
 }
 
-//COMPARISON FUNCTION BETWEEN PARTS BASED ON SCORE WEIGHTED ON THE LOCAL COST OF THAT PART
+//COMPARISON FUNCTION BETWEEN PARTS BASED ON SCORE WEIGHTED ON THE LOCAL COST OF THAT PART IN THE PATH (INCLUDING VISITCOST)
 bool compareWeightedPartScore(std::pair<int, std::pair<Path*, std::pair<double, double>>*> a, std::pair<int, std::pair<Path*, std::pair<double, double>>*> b) {
     std::list<Node*>::iterator itA =  find(a.second->first->nodes.begin(), a.second->first->nodes.end(), allNodes.at(a.first));
     std::list<Node*>::iterator itALast = a.second->first->nodes.end();
@@ -1069,7 +913,6 @@ void twoPointExchange() {
 
 int main(int argc, char** argv) {
     initializeNodes(argv[1]);
-check();
     double p = 5.0;
     int kLim = 5;
     int iLim = 10;
